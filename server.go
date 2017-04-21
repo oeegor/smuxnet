@@ -41,7 +41,11 @@ func (s *server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) error {
 
 func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 	// Setup server side of smux
-	session, _ := smux.Server(conn, nil)
+	session, err := smux.Server(conn, nil)
+	if err != nil {
+		fmt.Println("error creating session", err)
+		return
+	}
 	for {
 		stream, err := session.AcceptStream()
 		if err != nil {
