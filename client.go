@@ -61,7 +61,7 @@ func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, er
 	if err != nil {
 		return nil, err
 	}
-	if _, err := stream.Write(body); err != nil {
+	if err := writeFrame(stream, body); err != nil {
 		close(done)
 		return nil, err
 	}

@@ -64,7 +64,7 @@ func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
 		stream.SetReadDeadline(time.Now().Add(s.readTimeout))
 	}
 
-	buf, err := ioutil.ReadAll(stream)
+	buf, err := readFrame(stream)
 	if err != nil {
 		fmt.Println("error reading request", err)
 		return
