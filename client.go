@@ -4,21 +4,33 @@ import (
 	"net"
 	"time"
 
+	"fmt"
+
 	"github.com/xtaci/smux"
-	"github.com/zenhotels/chanserv"
 )
 
-type Client interface {
-	Request(body []byte) (<-chan chanserv.Frame, error)
+type Frame interface {
+	Bytes() []byte
 }
 
-func NewClient(network, addr string) (*client, error) {
+type Client interface {
+	Request(body []byte) (<-chan Frame, error)
+}
+
+func NewClient(network, addr string, keepAliveInterval, keepAliveTimeout time.Duration) (*client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	session, err := smux.Client(conn, nil)
+	conf := smux.DefaultConfig()
+	if keepAliveTimeout > 0 {
+		conf.KeepAliveTimeout = keepAliveTimeout
+	}
+	if keepAliveInterval > 0 {
+		conf.KeepAliveInterval = keepAliveInterval
+	}
+	session, err := smux.Client(conn, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -28,42 +40,43 @@ func NewClient(network, addr string) (*client, error) {
 }
 
 type client struct {
-	readTimeout  time.Duration
-	timeout      time.Duration
-	writeTimeout time.Duration
-	session      *smux.Session
+	session *smux.Session
 }
 
-func (c *client) Request(body []byte) (<-chan chanserv.Frame, error) {
+func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, error) {
+	var stream *smux.Stream
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-timeout:
+			fmt.Println("smux request timeouted")
+			stream.Close()
+		case <-done:
+		}
+	}()
+
 	stream, err := c.session.OpenStream()
 	if err != nil {
 		return nil, err
 	}
-	if c.timeout > 0 {
-		stream.SetDeadline(time.Now().Add(c.timeout))
-	}
-	if c.writeTimeout > 0 {
-		stream.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-	}
 	if _, err := stream.Write(body); err != nil {
+		close(done)
 		return nil, err
 	}
-	out := make(chan chanserv.Frame, 1024)
-	go c.readStream(stream, out)
+	out := make(chan Frame, 1024)
+	go c.readStream(stream, out, done)
 	return out, nil
 }
 
-func (c *client) readStream(stream *smux.Stream, out chan<- chanserv.Frame) {
+func (c *client) readStream(stream *smux.Stream, out chan<- Frame, done chan struct{}) {
 	for {
-		if c.readTimeout > 0 {
-			stream.SetReadDeadline(time.Now().Add(c.readTimeout))
-		}
 		buf, err := readFrame(stream)
 		if err != nil {
 			break
 		}
 		out <- frame(buf)
 	}
+	close(done)
 }
 
 type frame []byte
