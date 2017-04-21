@@ -1,7 +1,7 @@
 package smuxnet
 
 import (
-	"io"
+	"io/ioutil"
 	"net"
 	"time"
 
@@ -64,8 +64,11 @@ func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
 		stream.SetReadDeadline(time.Now().Add(s.readTimeout))
 	}
 
-	buf := make([]byte, 1024)
-	io.ReadFull(stream, buf)
+	buf, err := ioutil.ReadAll(stream)
+	if err != nil {
+		fmt.Println("error reading request", err)
+		return
+	}
 	for src := range srcFn(buf) {
 		go func(s chanserv.Source) {
 			for frame := range src.Out() {
