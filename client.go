@@ -14,7 +14,7 @@ type Frame interface {
 }
 
 type Client interface {
-	Request(body []byte) (<-chan Frame, error)
+	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, error)
 }
 
 func NewClient(network, addr string, keepAliveInterval, keepAliveTimeout time.Duration) (*client, error) {
