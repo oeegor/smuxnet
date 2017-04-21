@@ -36,7 +36,6 @@ func (s *server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) error {
 		}
 		go s.serve(conn, srcFn)
 	}
-
 	return nil
 }
 

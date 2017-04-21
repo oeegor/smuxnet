@@ -8,6 +8,10 @@ import (
 	"github.com/zenhotels/chanserv"
 )
 
+type Client interface {
+	Request(body []byte) (<-chan chanserv.Frame, error)
+}
+
 func NewClient(network, addr string) (*client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
