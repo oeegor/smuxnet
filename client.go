@@ -50,7 +50,9 @@ func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, er
 		select {
 		case <-timeout:
 			fmt.Println("smux request timeouted")
-			stream.Close()
+			if !stream.IsClosed() {
+				stream.Close()
+			}
 		case <-done:
 		}
 	}()
