@@ -1,7 +1,6 @@
 package smuxnet
 
 import (
-	"io/ioutil"
 	"net"
 	"time"
 
