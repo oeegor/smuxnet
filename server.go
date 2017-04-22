@@ -6,6 +6,8 @@ import (
 
 	"fmt"
 
+	"sync"
+
 	"github.com/xtaci/smux"
 	"github.com/zenhotels/chanserv"
 )
@@ -45,6 +47,7 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 		fmt.Println("error creating session", err)
 		return
 	}
+	defer fmt.Println("session close")
 	defer session.Close()
 	for {
 		stream, err := session.AcceptStream()
@@ -57,6 +60,7 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 }
 
 func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
+	defer fmt.Println("stream close")
 	defer stream.Close()
 	if s.writeTimeout > 0 {
 		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
@@ -70,14 +74,19 @@ func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
 		fmt.Println("error reading request", err)
 		return
 	}
+	wg := new(sync.WaitGroup)
 	for src := range srcFn(buf) {
+		wg.Add(1)
 		go func(s chanserv.Source) {
+			defer wg.Done()
 			for frame := range src.Out() {
-				_, err := stream.Write(frame.Bytes())
+				fmt.Println("write", string(frame.Bytes()))
+				writeFrame(stream, frame.Bytes())
 				if err != nil {
 					fmt.Println("error writing to stream", err)
 				}
 			}
 		}(src)
 	}
+	wg.Wait()
 }
