@@ -53,6 +53,7 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 		}
 		go s.processStream(stream, srcFn)
 	}
+	session.Close()
 }
 
 func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
@@ -78,4 +79,5 @@ func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
 			}
 		}(src)
 	}
+	stream.Close()
 }
