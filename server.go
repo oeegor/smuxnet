@@ -45,6 +45,7 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 		fmt.Println("error creating session", err)
 		return
 	}
+	defer session.Close()
 	for {
 		stream, err := session.AcceptStream()
 		if err != nil {
@@ -53,10 +54,10 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc) {
 		}
 		go s.processStream(stream, srcFn)
 	}
-	session.Close()
 }
 
 func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
+	defer stream.Close()
 	if s.writeTimeout > 0 {
 		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 	}
@@ -79,5 +80,4 @@ func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc) {
 			}
 		}(src)
 	}
-	stream.Close()
 }
