@@ -1,12 +1,15 @@
 package smuxnet
 
 import (
+	"errors"
 	"net"
 	"time"
 
 	"fmt"
 
 	"sync"
+
+	"io"
 
 	"github.com/xtaci/smux"
 )
@@ -19,7 +22,11 @@ type Client interface {
 	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, error)
 }
 
-func NewClient(network, addr string, keepAliveInterval, keepAliveTimeout time.Duration) (*client, error) {
+func NewClient(
+	network, addr string,
+	keepAliveInterval, keepAliveTimeout time.Duration,
+	minCompressLen int,
+) (*client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
@@ -37,14 +44,16 @@ func NewClient(network, addr string, keepAliveInterval, keepAliveTimeout time.Du
 		return nil, err
 	}
 	return &client{
-		session: session,
-		wg:      new(sync.WaitGroup),
+		minCompressLen: minCompressLen,
+		session:        session,
+		wg:             new(sync.WaitGroup),
 	}, nil
 }
 
 type client struct {
-	session *smux.Session
-	wg      *sync.WaitGroup
+	minCompressLen int
+	session        *smux.Session
+	wg             *sync.WaitGroup
 }
 
 func (c *client) GracefulClose() {
@@ -54,50 +63,55 @@ func (c *client) GracefulClose() {
 	}
 }
 
-func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, error) {
+func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error) {
 	c.wg.Add(1)
 
-	var stream *smux.Stream
+	errs := make(chan error, 2)
+	out := make(chan Frame, 1024)
+	c.wg.Add(1)
+	go c.request(body, timeout, out, errs)
+	return out, errs
+
+}
+
+func (c *client) request(body []byte, timeout <-chan struct{}, out chan<- Frame, errs chan error) {
 	done := make(chan struct{})
+	defer close(done)
+
+	var stream *smux.Stream
 	go func() {
 		defer c.wg.Done()
+		defer close(errs)
+		defer close(out)
 
 		select {
 		case <-timeout:
-			fmt.Println("smux request timeouted")
+			errs <- errors.New("request timeouted")
 		case <-done:
-		}
-		if stream != nil {
-			if err := stream.Close(); err != nil {
-				fmt.Println("close stream error:", err)
-			}
 		}
 	}()
 
 	stream, err := c.session.OpenStream()
 	if err != nil {
-		return nil, err
+		errs <- fmt.Errorf("open stream error: %v", err)
+		return
 	}
-	if err := writeFrame(stream, body); err != nil {
-		close(done)
-		return nil, err
-	}
-	out := make(chan Frame, 1024)
-	c.wg.Add(1)
-	go c.readStream(stream, out, done)
-	return out, nil
-}
 
-func (c *client) readStream(stream *smux.Stream, out chan<- Frame, done chan struct{}) {
-	defer c.wg.Done()
-	defer close(done)
+	if err := writeFrame(stream, body, c.minCompressLen); err != nil {
+		errs <- fmt.Errorf("write frame error: %v", err)
+		return
+	}
 
 	for {
-		buf, err := readFrame(stream)
-		if err != nil {
+		if buf, err := readFrame(stream); err == nil {
+			out <- frame(buf)
+		} else {
+			if err == io.EOF {
+				break
+			}
+			errs <- fmt.Errorf("client read frame error: %v", err)
 			break
 		}
-		out <- frame(buf)
 	}
 }
 
