@@ -21,7 +21,7 @@ type Client interface {
 }
 
 func NewClient(
-	network, addr string,
+	id, network, addr string,
 	keepAliveInterval, keepAliveTimeout time.Duration,
 	minCompressLen int,
 ) (Client, error) {
@@ -49,9 +49,14 @@ func NewClient(
 }
 
 type client struct {
+	id             string
 	minCompressLen int
 	session        *smux.Session
 	wg             *sync.WaitGroup
+}
+
+func (c *client) ID() string {
+	return c.id
 }
 
 func (c *client) IsClosed() bool {

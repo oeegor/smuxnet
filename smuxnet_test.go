@@ -77,7 +77,7 @@ func testSmuxnet(t *testing.T, reqBody []byte) {
 	go func() {
 		defer wg.Done()
 
-		cli, err := NewClient("tcp4", ":20000", 0, 0, 0)
+		cli, err := NewClient("id", "tcp4", ":20000", 0, 0, 0)
 		require.NoError(t, err)
 		out, cerrs := cli.Request(reqBody, nil)
 
