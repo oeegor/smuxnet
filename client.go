@@ -16,6 +16,7 @@ type Frame interface {
 }
 
 type Client interface {
+	ID() string
 	IsClosed() bool
 	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error)
 }
