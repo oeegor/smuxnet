@@ -10,7 +10,10 @@ import (
 	"github.com/zenhotels/chanserv"
 )
 
-func NewServer(readTimeout, writeTimeout time.Duration, minCompressLen int) (*server, error) {
+func NewServer(
+	readTimeout, writeTimeout time.Duration,
+	minCompressLen int,
+) (*server, error) {
 	return &server{
 		minCompressLen: minCompressLen,
 		readTimeout:    readTimeout,
@@ -35,12 +38,10 @@ func (s *server) GracefulStop() {
 	s.wg.Wait()
 }
 
-func (s *server) Stop() {
-	close(s.stop)
-	s.wg.Wait()
-}
-
 func (s *server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) chan error {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
 	errs := make(chan error, 1)
 	go s.listenAndServe(addr, srcFn, errs)
 	return errs
@@ -59,12 +60,13 @@ func (s *server) listenAndServe(addr string, srcFn chanserv.SourceFunc, errs cha
 		errs <- fmt.Errorf("net.Listen error: %v", err)
 		return
 	}
+	defer listener.Close()
 
-ACCEPT_TCP_LOOP:
+ACCEPT_LOOP:
 	for {
 		select {
 		case <-s.stop:
-			break ACCEPT_TCP_LOOP
+			break ACCEPT_LOOP
 		default:
 		}
 
@@ -72,7 +74,7 @@ ACCEPT_TCP_LOOP:
 		conn, err := listener.AcceptTCP()
 		if err != nil {
 			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
-				continue
+				continue ACCEPT_LOOP
 			}
 			errs <- fmt.Errorf("listener.Accept error: %v", err)
 			return
@@ -94,27 +96,37 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error
 	}
 	defer session.Close()
 
-ACCEPT_LOOP:
+	sessionWg := new(sync.WaitGroup)
+SESSION_LOOP:
 	for {
 		select {
 		case <-s.stop:
-			break ACCEPT_LOOP
+			break SESSION_LOOP
 		default:
 		}
+
+		session.SetDeadline(time.Now().Add(1e9))
 		stream, err := session.AcceptStream()
 		if err != nil {
+			if err.Error() == "i/o timeout" {
+				continue SESSION_LOOP
+			}
+
 			errs <- fmt.Errorf("error accepting stream: %v", err)
-			break ACCEPT_LOOP
+			break SESSION_LOOP
 		}
-		s.wg.Add(1)
-		go s.processStream(stream, srcFn, errs)
+		sessionWg.Add(1)
+		go s.processStream(stream, srcFn, sessionWg, errs)
 	}
+	sessionWg.Wait()
 }
 
-func (s *server) processStream(stream *smux.Stream, srcFn chanserv.SourceFunc, errs chan error) {
-	defer s.wg.Done()
+func (s *server) processStream(
+	stream *smux.Stream, srcFn chanserv.SourceFunc,
+	sessionWg *sync.WaitGroup, errs chan error,
+) {
+	defer sessionWg.Done()
 	defer stream.Close()
-	defer fmt.Println("closing stream")
 
 	if s.writeTimeout > 0 {
 		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))

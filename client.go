@@ -2,14 +2,11 @@ package smuxnet
 
 import (
 	"errors"
-	"net"
-	"time"
-
 	"fmt"
-
-	"sync"
-
 	"io"
+	"net"
+	"sync"
+	"time"
 
 	"github.com/xtaci/smux"
 )

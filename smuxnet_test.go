@@ -3,7 +3,7 @@ package smuxnet
 import (
 	"testing"
 
-	"fmt"
+	"sync"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,6 @@ func (s *sourceT) writeFrames(t *testing.T) {
 }
 
 func createSource(t *testing.T, frames []Frame) chanserv.Source {
-
 	src := &sourceT{
 		frames: frames,
 		out:    make(chan chanserv.Frame),
@@ -47,42 +46,61 @@ func createSource(t *testing.T, frames []Frame) chanserv.Source {
 	return src
 }
 
-func TestSmuxnet(t *testing.T) {
-
-	srcFn := func(reqBody []byte) <-chan chanserv.Source {
-		t.Log("reqbody", string(reqBody))
+func handler(t *testing.T) chanserv.SourceFunc {
+	return func(reqBody []byte) <-chan chanserv.Source {
+		respBody := append([]byte("resp: "), reqBody...)
 		src := make(chan chanserv.Source)
 		go func() {
-			src <- createSource(t, nil)
+			src <- createSource(t, []Frame{frame(respBody)})
 			close(src)
+			t.Log("closed server chanserv.Source chan")
 		}()
 		return src
 	}
+}
 
-	fmt.Println("create srv")
+func TestSmuxnet(t *testing.T) {
+	testSmuxnet(t, []byte("my huge payload"))
+}
+
+func TestSmuxnetEmptyBody(t *testing.T) {
+	testSmuxnet(t, nil)
+}
+
+func testSmuxnet(t *testing.T, reqBody []byte) {
+
+	wg := new(sync.WaitGroup)
 	srv, _ := NewServer(0, 0, 0)
-	errs := srv.ListenAndServe(":20000", srcFn)
+	errs := srv.ListenAndServe(":20000", handler(t))
+
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
 		cli, err := NewClient("tcp4", ":20000", 0, 0, 0)
 		require.NoError(t, err)
-		fmt.Println("send req")
-		out, cerrs := cli.Request(nil, nil)
+		out, cerrs := cli.Request(reqBody, nil)
+
+		wg.Add(1)
 		go func() {
-			fmt.Println("cli errors wait")
+			defer wg.Done()
 			for cerr := range cerrs {
 				assert.NoError(t, cerr)
 			}
+			t.Log("client errors loop done")
 		}()
 
-		fmt.Println("cli frames wait")
 		for frame := range out {
-			fmt.Println("got frame", string(frame.Bytes()))
+			t.Logf("got frame: %s", frame.Bytes())
 		}
-		fmt.Println("Stop server")
-		srv.Stop()
+		t.Log("out channel closed")
+		srv.GracefulStop()
+		t.Log("server stopped")
 	}()
-	fmt.Println("waiting for errors")
 	for err := range errs {
 		assert.NoError(t, err)
 	}
+
+	t.Log("wg.Wait()")
+	wg.Wait()
 }
