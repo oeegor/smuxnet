@@ -89,7 +89,9 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error
 	defer conn.Close()
 
 	// Setup server side of smux
-	session, err := smux.Server(conn, nil)
+	conf := smux.DefaultConfig()
+	conf.MaxFrameSize = 65535
+	session, err := smux.Server(conn, conf)
 	if err != nil {
 		errs <- fmt.Errorf("error creating session: %v", err)
 		return
@@ -141,6 +143,7 @@ func (s *server) processStream(
 		return
 	}
 
+	writeLock := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for src := range srcFn(buf) {
 		wg.Add(1)
@@ -154,8 +157,9 @@ func (s *server) processStream(
 					continue FRAME_LOOP
 				default:
 				}
-
+				writeLock.Lock()
 				err = writeFrame(stream, frame.Bytes(), s.minCompressLen)
+				writeLock.Unlock()
 				if err != nil {
 					errs <- fmt.Errorf("error writing to stream: %v", err)
 				}
