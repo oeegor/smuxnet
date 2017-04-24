@@ -16,6 +16,7 @@ type Frame interface {
 }
 
 type Client interface {
+	IsClosed() bool
 	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error)
 }
 
@@ -51,6 +52,10 @@ type client struct {
 	minCompressLen int
 	session        *smux.Session
 	wg             *sync.WaitGroup
+}
+
+func (c *client) IsClosed() bool {
+	return c.session.IsClosed()
 }
 
 func (c *client) GracefulClose() {
