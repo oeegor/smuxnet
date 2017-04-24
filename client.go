@@ -9,16 +9,13 @@ import (
 	"time"
 
 	"github.com/xtaci/smux"
+	"github.com/zenhotels/chanserv"
 )
-
-type Frame interface {
-	Bytes() []byte
-}
 
 type Client interface {
 	ID() string
 	IsClosed() bool
-	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error)
+	Request(body []byte, timeout <-chan struct{}) (<-chan chanserv.Frame, chan error)
 }
 
 func NewClient(
@@ -72,18 +69,18 @@ func (c *client) GracefulClose() {
 	}
 }
 
-func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error) {
+func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan chanserv.Frame, chan error) {
 	c.wg.Add(1)
 
 	errs := make(chan error, 2)
-	out := make(chan Frame, 1024)
+	out := make(chan chanserv.Frame, 1024)
 	c.wg.Add(1)
 	go c.request(body, timeout, out, errs)
 	return out, errs
 
 }
 
-func (c *client) request(body []byte, timeout <-chan struct{}, out chan<- Frame, errs chan error) {
+func (c *client) request(body []byte, timeout <-chan struct{}, out chan<- chanserv.Frame, errs chan error) {
 	done := make(chan struct{})
 	defer close(done)
 
