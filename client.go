@@ -43,6 +43,7 @@ func NewClient(
 		return nil, err
 	}
 	return &client{
+		id:             id,
 		minCompressLen: minCompressLen,
 		session:        session,
 		wg:             new(sync.WaitGroup),

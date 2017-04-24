@@ -79,6 +79,7 @@ func testSmuxnet(t *testing.T, reqBody []byte) {
 
 		cli, err := NewClient("id", "tcp4", ":20000", 0, 0, 0)
 		require.NoError(t, err)
+		require.Equal(t, "id", cli.ID())
 		out, cerrs := cli.Request(reqBody, nil)
 
 		wg.Add(1)
