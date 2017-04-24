@@ -16,14 +16,14 @@ type Frame interface {
 }
 
 type Client interface {
-	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, error)
+	Request(body []byte, timeout <-chan struct{}) (<-chan Frame, chan error)
 }
 
 func NewClient(
 	network, addr string,
 	keepAliveInterval, keepAliveTimeout time.Duration,
 	minCompressLen int,
-) (*client, error) {
+) (Client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
