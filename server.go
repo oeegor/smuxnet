@@ -90,7 +90,7 @@ func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error
 
 	// Setup server side of smux
 	conf := smux.DefaultConfig()
-	conf.MaxFrameSize = 65535
+	conf.MaxFrameSize = 65000
 	session, err := smux.Server(conn, conf)
 	if err != nil {
 		errs <- fmt.Errorf("error creating session: %v", err)
