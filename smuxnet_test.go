@@ -11,7 +11,7 @@ import (
 )
 
 type sourceT struct {
-	frames []Frame
+	frames []chanserv.Frame
 	out    chan chanserv.Frame
 }
 
@@ -37,7 +37,7 @@ func (s *sourceT) writeFrames(t *testing.T) {
 	t.Log("closed sourceT out")
 }
 
-func createSource(t *testing.T, frames []Frame) chanserv.Source {
+func createSource(t *testing.T, frames []chanserv.Frame) chanserv.Source {
 	src := &sourceT{
 		frames: frames,
 		out:    make(chan chanserv.Frame),
@@ -51,7 +51,7 @@ func handler(t *testing.T) chanserv.SourceFunc {
 		respBody := append([]byte("resp: "), reqBody...)
 		src := make(chan chanserv.Source)
 		go func() {
-			src <- createSource(t, []Frame{frame(respBody)})
+			src <- createSource(t, []chanserv.Frame{frame(respBody)})
 			close(src)
 			t.Log("closed server chanserv.Source chan")
 		}()
