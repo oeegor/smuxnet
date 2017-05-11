@@ -1,7 +1,6 @@
 package smuxnet
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,7 +14,7 @@ import (
 type Client interface {
 	ID() string
 	IsClosed() bool
-	Request(body []byte, timeout <-chan struct{}) (<-chan chanserv.Frame, chan error)
+	Request(body []byte, deadline time.Time) (<-chan chanserv.Frame, chan error)
 }
 
 func NewClient(
@@ -35,6 +34,8 @@ func NewClient(
 	if keepAliveInterval > 0 {
 		conf.KeepAliveInterval = keepAliveInterval
 	}
+	conf.MaxFrameSize = 65000
+	conf.MaxReceiveBuffer = 1024 * 1024 * 1024
 	session, err := smux.Client(conn, conf)
 	if err != nil {
 		return nil, err
@@ -69,37 +70,30 @@ func (c *client) GracefulClose() {
 	}
 }
 
-func (c *client) Request(body []byte, timeout <-chan struct{}) (<-chan chanserv.Frame, chan error) {
+func (c *client) Request(body []byte, deadline time.Time) (<-chan chanserv.Frame, chan error) {
 	c.wg.Add(1)
 
 	errs := make(chan error, 2)
 	out := make(chan chanserv.Frame, 1024)
-	c.wg.Add(1)
-	go c.request(body, timeout, out, errs)
+	go c.request(body, deadline, out, errs)
 	return out, errs
 
 }
 
-func (c *client) request(body []byte, timeout <-chan struct{}, out chan<- chanserv.Frame, errs chan error) {
-	done := make(chan struct{})
-	defer close(done)
-
-	var stream *smux.Stream
-	go func() {
-		defer c.wg.Done()
-		defer close(errs)
-		defer close(out)
-
-		select {
-		case <-timeout:
-			errs <- errors.New("request timeouted")
-		case <-done:
-		}
-	}()
+func (c *client) request(body []byte, deadline time.Time, out chan<- chanserv.Frame, errs chan error) {
+	defer c.wg.Done()
+	defer close(errs)
+	defer close(out)
 
 	stream, err := c.session.OpenStream()
 	if err != nil {
 		errs <- fmt.Errorf("open stream error: %v", err)
+		return
+	}
+
+	err = stream.SetDeadline(deadline)
+	if err != nil {
+		errs <- fmt.Errorf("set deadline error: %v", err)
 		return
 	}
 
