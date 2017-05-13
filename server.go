@@ -152,6 +152,9 @@ func (s *server) processStream(
 
 		FRAME_LOOP:
 			for frame := range cs.Out() {
+				if err != nil {
+					continue
+				}
 				select {
 				case <-s.stop:
 					continue FRAME_LOOP
