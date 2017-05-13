@@ -157,9 +157,7 @@ func (s *server) processStream(
 					continue FRAME_LOOP
 				default:
 				}
-				writeLock.Lock()
-				err = writeFrame(stream, frame.Bytes(), s.minCompressLen)
-				writeLock.Unlock()
+				err = writeFrame(stream, frame.Bytes(), s.minCompressLen, writeLock)
 				if err != nil {
 					errs <- fmt.Errorf("error writing to stream: %v", err)
 				}

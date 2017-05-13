@@ -97,7 +97,7 @@ func (c *client) request(body []byte, deadline time.Time, out chan<- chanserv.Fr
 		return
 	}
 
-	if err := writeFrame(stream, body, c.minCompressLen); err != nil {
+	if err := writeFrame(stream, body, c.minCompressLen, nil); err != nil {
 		errs <- fmt.Errorf("write frame error: %v", err)
 		return
 	}

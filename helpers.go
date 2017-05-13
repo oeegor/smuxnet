@@ -5,48 +5,101 @@ import (
 	"encoding/binary"
 	"io"
 
+	"fmt"
+
+	"hash/crc32"
+
+	"sync"
+
+	"errors"
+
 	"github.com/bkaradzic/go-lz4"
 )
 
-const rawHeader = "raw!"
-const compressionHeader = "lz4!"
+const (
+	bodyTypeRaw byte = iota
+	bodyTypeCompressedLz4
+)
 
-func writeFrame(wr io.Writer, frame []byte, minCompressLen int) (err error) {
-	header := rawHeader
+type crcCheckErr error
+
+type header [9]byte
+
+func (h *header) getCRC() uint32 {
+	return binary.LittleEndian.Uint32(h[:4])
+}
+
+func (h *header) setCRC(crc uint32) {
+	binary.LittleEndian.PutUint32(h[:4], crc)
+}
+
+func (h *header) getPayloadSize() uint32 {
+	return binary.LittleEndian.Uint32(h[4:8])
+}
+
+func (h *header) setPayloadSize(sz uint32) {
+	binary.LittleEndian.PutUint32(h[4:8], sz)
+}
+
+func (h *header) getBodyType() byte {
+	return h[8]
+}
+
+func (h *header) setBodyType(bt byte) {
+	h[8] = bt
+}
+
+func writeFrame(wr io.Writer, frame []byte, minCompressLen int, lock *sync.Mutex) (err error) {
+	header := header{}
+	bodyType := bodyTypeRaw
 	if len(frame) > minCompressLen {
-		header = compressionHeader
+		bodyType = bodyTypeCompressedLz4
 		frame, err = lz4.Encode(nil, frame)
 		if err != nil {
 			return err
 		}
 	}
+	header.setBodyType(bodyType)
+	header.setCRC(crc32.ChecksumIEEE(frame))
+	header.setPayloadSize(uint32(len(frame)))
 
-	buf := make([]byte, 12)
-	binary.LittleEndian.PutUint64(buf[:8], uint64(len(frame)))
-	copy(buf[8:12], header)
-	if _, err = wr.Write(buf); err != nil {
-		return
+	if lock != nil {
+		lock.Lock()
+		defer lock.Unlock()
+	}
+	if _, err = wr.Write(header[:]); err != nil {
+		return err
 	}
 	_, err = io.Copy(wr, bytes.NewReader(frame))
-	return
+	return err
 }
 
 func readFrame(r io.Reader) ([]byte, error) {
-
-	buf := make([]byte, 12)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, err
+	header := header{}
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		if err == io.EOF {
+			return nil, err
+		}
+		return nil, fmt.Errorf("readFrameHeader: %v", err)
+	}
+	data := make([]byte, header.getPayloadSize())
+	if _, err := io.ReadFull(r, data); err != nil {
+		if err == io.EOF {
+			return nil, err
+		}
+		return nil, fmt.Errorf("readFrame: %v", err)
 	}
 
-	frameSize := binary.LittleEndian.Uint64(buf[:8])
-	framebuf := bytes.NewBuffer(make([]byte, 0, frameSize))
-	if _, err := io.CopyN(framebuf, r, int64(frameSize)); err != nil {
-		return nil, err
+	if crc32.ChecksumIEEE(data) != header.getCRC() {
+		return nil, crcCheckErr(errors.New("crc not matched"))
 	}
 
-	data := framebuf.Bytes()
-	if bytes.Equal([]byte(compressionHeader), buf[8:]) {
-		return lz4.Decode(nil, data)
+	if header.getBodyType() == bodyTypeCompressedLz4 {
+		data, err := lz4.Decode(nil, data)
+		if err != nil {
+			return nil, fmt.Errorf("lz4: %v", err)
+		}
+		return data, nil
 	}
 	return data, nil
 }

@@ -9,13 +9,8 @@ import (
 
 	"sync"
 
-	"math"
-
-	"bytes"
-
 	"fmt"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zenhotels/chanserv"
 )
@@ -27,24 +22,21 @@ type req struct {
 }
 
 func TestOk(t *testing.T) {
-	size := uint64(math.MaxUint32) * 2
-	buf := bytes.NewBuffer(make([]byte, size))
-	buf.WriteString("a")
-	fmt.Println("buf done", size, buf.Len())
-	return
 
 	r := req{
 		Sources: 1,
 		Frames:  1,
-		Frame:   buf.String(),
+		Frame:   "foo",
 	}
 	cli := setupServerAndCli(t)
 	wg := new(sync.WaitGroup)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		wg.Add(1)
 		go sendReq(t, r, cli, wg)
 	}
+	fmt.Println("wait")
 	wg.Wait()
+	fmt.Println("wait doe")
 }
 
 func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
@@ -60,19 +52,25 @@ func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
 	}()
 
 	counter := 0
+	fmt.Println("read out")
 	for frame := range out {
+		fmt.Println("read out 1")
 		counter++
 		require.Equal(t, len(frame.Bytes()), len(r.Frame))
 	}
+	fmt.Println("read out doe")
 	require.Equal(t, r.Frames*r.Sources, counter)
 }
 
 func setupServerAndCli(t *testing.T) Client {
 	srcFunc := func(body []byte) <-chan chanserv.Source {
+		fmt.Println("body", string(body))
 		out := make(chan chanserv.Source)
+
 		go func() {
 			var r req
-			assert.NoError(t, json.Unmarshal(body, &r))
+			require.NoError(t, json.Unmarshal(body, &r))
+			fmt.Println("ddd")
 			for i := 0; i < r.Sources; i++ {
 				frames := make([]frame, r.Frames)
 				for j := 0; j < r.Frames; j++ {
@@ -118,8 +116,10 @@ func (s *source) Out() <-chan chanserv.Frame {
 }
 
 func (s *source) writeFrames(t *testing.T) {
+	fmt.Println("wr1")
 	for _, frame := range s.frames {
 		s.out <- &frame
 	}
+	fmt.Println("wr2")
 	close(s.out)
 }
