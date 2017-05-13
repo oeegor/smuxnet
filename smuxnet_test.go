@@ -3,105 +3,123 @@ package smuxnet
 import (
 	"testing"
 
+	"encoding/json"
+
+	"time"
+
 	"sync"
+
+	"math"
+
+	"bytes"
+
+	"fmt"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zenhotels/chanserv"
 )
 
-type sourceT struct {
-	frames []chanserv.Frame
+type req struct {
+	Sources int
+	Frames  int
+	Frame   string
+}
+
+func TestOk(t *testing.T) {
+	size := uint64(math.MaxUint32) * 2
+	buf := bytes.NewBuffer(make([]byte, size))
+	buf.WriteString("a")
+	fmt.Println("buf done", size, buf.Len())
+	return
+
+	r := req{
+		Sources: 1,
+		Frames:  1,
+		Frame:   buf.String(),
+	}
+	cli := setupServerAndCli(t)
+	wg := new(sync.WaitGroup)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go sendReq(t, r, cli, wg)
+	}
+	wg.Wait()
+}
+
+func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
+	defer wg.Done()
+	body, err := json.Marshal(&r)
+	require.NoError(t, err)
+
+	out, errs2 := cli.Request(body, time.Now().Add(time.Hour))
+	go func() {
+		for err := range errs2 {
+			require.NoError(t, err)
+		}
+	}()
+
+	counter := 0
+	for frame := range out {
+		counter++
+		require.Equal(t, len(frame.Bytes()), len(r.Frame))
+	}
+	require.Equal(t, r.Frames*r.Sources, counter)
+}
+
+func setupServerAndCli(t *testing.T) Client {
+	srcFunc := func(body []byte) <-chan chanserv.Source {
+		out := make(chan chanserv.Source)
+		go func() {
+			var r req
+			assert.NoError(t, json.Unmarshal(body, &r))
+			for i := 0; i < r.Sources; i++ {
+				frames := make([]frame, r.Frames)
+				for j := 0; j < r.Frames; j++ {
+					frames[j] = frame(r.Frame)
+				}
+				src := &source{frames: frames, out: make(chan chanserv.Frame)}
+				go src.writeFrames(t)
+				out <- src
+			}
+			close(out)
+		}()
+		return out
+	}
+
+	srv, _ := NewServer(0, 0, 100)
+	errs := srv.ListenAndServe(":9001", srcFunc)
+	go func() {
+		for err := range errs {
+			require.NoError(t, err)
+		}
+	}()
+	cli, err := NewClient("test", "tcp4", ":9001", 0, 0, 100)
+	require.NoError(t, err)
+	return cli
+}
+
+type source struct {
+	frames []frame
+	header []byte
 	out    chan chanserv.Frame
 }
 
-func (s *sourceT) Header() []byte {
+func (s *source) Header() []byte {
+	return s.header
+}
+
+func (s *source) Meta() chanserv.MetaData {
 	return nil
 }
 
-func (s *sourceT) Meta() chanserv.MetaData {
-	return nil
-}
-
-func (s *sourceT) Out() <-chan chanserv.Frame {
+func (s *source) Out() <-chan chanserv.Frame {
 	return s.out
 }
 
-func (s *sourceT) writeFrames(t *testing.T) {
-	t.Log("write frames start")
+func (s *source) writeFrames(t *testing.T) {
 	for _, frame := range s.frames {
-		s.out <- frame
+		s.out <- &frame
 	}
 	close(s.out)
-
-	t.Log("closed sourceT out")
-}
-
-func createSource(t *testing.T, frames []chanserv.Frame) chanserv.Source {
-	src := &sourceT{
-		frames: frames,
-		out:    make(chan chanserv.Frame),
-	}
-	go src.writeFrames(t)
-	return src
-}
-
-func handler(t *testing.T) chanserv.SourceFunc {
-	return func(reqBody []byte) <-chan chanserv.Source {
-		respBody := append([]byte("resp: "), reqBody...)
-		src := make(chan chanserv.Source)
-		go func() {
-			src <- createSource(t, []chanserv.Frame{frame(respBody)})
-			close(src)
-			t.Log("closed server chanserv.Source chan")
-		}()
-		return src
-	}
-}
-
-func TestSmuxnet(t *testing.T) {
-	testSmuxnet(t, []byte("my huge payload"))
-}
-
-func TestSmuxnetEmptyBody(t *testing.T) {
-	testSmuxnet(t, nil)
-}
-
-func testSmuxnet(t *testing.T, reqBody []byte) {
-
-	wg := new(sync.WaitGroup)
-	srv, _ := NewServer(0, 0, 0)
-	errs := srv.ListenAndServe(":20000", handler(t))
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		cli, err := NewClient("id", "tcp4", ":20000", 0, 0, 0)
-		require.NoError(t, err)
-		require.Equal(t, "id", cli.ID())
-		out, cerrs := cli.Request(reqBody, nil)
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for cerr := range cerrs {
-				assert.NoError(t, cerr)
-			}
-			t.Log("client errors loop done")
-		}()
-
-		for frame := range out {
-			t.Logf("got frame: %s", frame.Bytes())
-		}
-		t.Log("out channel closed")
-		srv.GracefulStop()
-		t.Log("server stopped")
-	}()
-	for err := range errs {
-		assert.NoError(t, err)
-	}
-
-	t.Log("wg.Wait()")
-	wg.Wait()
 }
