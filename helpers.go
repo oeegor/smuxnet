@@ -21,8 +21,6 @@ const (
 	bodyTypeCompressedLz4
 )
 
-type crcCheckErr error
-
 type header [9]byte
 
 func (h *header) getCRC() uint32 {
@@ -91,7 +89,7 @@ func readFrame(r io.Reader) ([]byte, error) {
 	}
 
 	if crc32.ChecksumIEEE(data) != header.getCRC() {
-		return nil, crcCheckErr(errors.New("crc not matched"))
+		return nil, errors.New("invalid crc")
 	}
 
 	if header.getBodyType() == bodyTypeCompressedLz4 {
