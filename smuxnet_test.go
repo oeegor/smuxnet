@@ -27,7 +27,7 @@ func TestOk(t *testing.T) {
 	r := req{
 		Sources: 1,
 		Frames:  4,
-		Frame:   strings.Repeat("a", 1000*1000*100),
+		Frame:   strings.Repeat("a", 1000*1000*10),
 	}
 	r.RequestMeta.Timeout = 1
 	cli := setupServerAndCli(t)
