@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/xtaci/smux"
 	"github.com/zenhotels/chanserv"
 )
@@ -130,17 +132,24 @@ func (s *server) processStream(
 	defer sessionWg.Done()
 	defer stream.Close()
 
-	if s.writeTimeout > 0 {
-		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
-	}
+	started := time.Now()
 	if s.readTimeout > 0 {
-		stream.SetReadDeadline(time.Now().Add(s.readTimeout))
+		stream.SetReadDeadline(started.Add(s.readTimeout))
 	}
 
 	buf, err := readFrame(stream)
 	if err != nil {
 		errs <- fmt.Errorf("error reading request frame: %v", err)
 		return
+	}
+
+	var req RequestMeta
+	json.Unmarshal(buf, &req)
+
+	if req.Timeout > 0 {
+		stream.SetWriteDeadline(started.Add(time.Duration(req.Timeout)))
+	} else if s.writeTimeout > 0 {
+		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 	}
 
 	writeLock := new(sync.Mutex)
@@ -170,4 +179,8 @@ func (s *server) processStream(
 		}(src)
 	}
 	wg.Wait()
+}
+
+type RequestMeta struct {
+	Timeout uint16
 }
