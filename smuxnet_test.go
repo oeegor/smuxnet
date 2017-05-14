@@ -9,11 +9,7 @@ import (
 
 	"sync"
 
-	"math"
-
-	"bytes"
-
-	"fmt"
+	"strings"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,26 +17,22 @@ import (
 )
 
 type req struct {
+	RequestMeta
 	Sources int
 	Frames  int
 	Frame   string
 }
 
 func TestOk(t *testing.T) {
-	size := uint64(math.MaxUint32) * 2
-	buf := bytes.NewBuffer(make([]byte, size))
-	buf.WriteString("a")
-	fmt.Println("buf done", size, buf.Len())
-	return
-
 	r := req{
 		Sources: 1,
-		Frames:  1,
-		Frame:   buf.String(),
+		Frames:  4,
+		Frame:   strings.Repeat("a", 1000*1000*100),
 	}
+	r.RequestMeta.Timeout = 1
 	cli := setupServerAndCli(t)
 	wg := new(sync.WaitGroup)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		wg.Add(1)
 		go sendReq(t, r, cli, wg)
 	}
@@ -54,17 +46,22 @@ func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
 
 	out, errs2 := cli.Request(body, time.Now().Add(time.Hour))
 	go func() {
+		fail := false
 		for err := range errs2 {
-			require.NoError(t, err)
+			fail = true
+			t.Error("client error", err)
+		}
+		if fail {
+			t.Fail()
 		}
 	}()
 
 	counter := 0
 	for frame := range out {
 		counter++
-		require.Equal(t, len(frame.Bytes()), len(r.Frame))
+		assert.Equal(t, len(frame.Bytes()), len(r.Frame), "frame len is incorrect")
 	}
-	require.Equal(t, r.Frames*r.Sources, counter)
+	assert.Equal(t, r.Frames*r.Sources, counter, "number of frames is incorrect")
 }
 
 func setupServerAndCli(t *testing.T) Client {
@@ -86,14 +83,19 @@ func setupServerAndCli(t *testing.T) Client {
 		}()
 		return out
 	}
-
 	srv, _ := NewServer(0, 0, 100)
 	errs := srv.ListenAndServe(":9001", srcFunc)
 	go func() {
+		fail := false
 		for err := range errs {
-			require.NoError(t, err)
+			fail = true
+			t.Error("server error", err)
+		}
+		if fail {
+			t.Fail()
 		}
 	}()
+	time.Sleep(time.Millisecond)
 	cli, err := NewClient("test", "tcp4", ":9001", 0, 0, 100)
 	require.NoError(t, err)
 	return cli

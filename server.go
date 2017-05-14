@@ -147,7 +147,7 @@ func (s *server) processStream(
 	json.Unmarshal(buf, &req)
 
 	if req.Timeout > 0 {
-		stream.SetWriteDeadline(started.Add(time.Duration(req.Timeout)))
+		stream.SetWriteDeadline(started.Add(time.Duration(req.Timeout) * time.Second))
 	} else if s.writeTimeout > 0 {
 		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 	}
@@ -162,6 +162,9 @@ func (s *server) processStream(
 		FRAME_LOOP:
 			for frame := range cs.Out() {
 				if err != nil {
+					// if error is not empty shouldn't write anymore frames
+					// they may be written despite deadline has passed
+					// because of channels in stream.go
 					continue
 				}
 				select {
