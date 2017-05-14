@@ -1,7 +1,6 @@
 package smuxnet
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 
@@ -23,32 +22,31 @@ const (
 
 type header [9]byte
 
-func (h *header) getCRC() uint32 {
+func (h *header) GetCRC() uint32 {
 	return binary.LittleEndian.Uint32(h[:4])
 }
 
-func (h *header) setCRC(crc uint32) {
+func (h *header) SetCRC(crc uint32) {
 	binary.LittleEndian.PutUint32(h[:4], crc)
 }
 
-func (h *header) getPayloadSize() uint32 {
+func (h *header) GetPayloadSize() uint32 {
 	return binary.LittleEndian.Uint32(h[4:8])
 }
 
-func (h *header) setPayloadSize(sz uint32) {
+func (h *header) SetPayloadSize(sz uint32) {
 	binary.LittleEndian.PutUint32(h[4:8], sz)
 }
 
-func (h *header) getBodyType() byte {
+func (h *header) GetBodyType() byte {
 	return h[8]
 }
 
-func (h *header) setBodyType(bt byte) {
+func (h *header) SetBodyType(bt byte) {
 	h[8] = bt
 }
 
 func writeFrame(wr io.Writer, frame []byte, minCompressLen int, lock *sync.Mutex) (err error) {
-	header := header{}
 	bodyType := bodyTypeRaw
 	if len(frame) > minCompressLen {
 		bodyType = bodyTypeCompressedLz4
@@ -57,9 +55,10 @@ func writeFrame(wr io.Writer, frame []byte, minCompressLen int, lock *sync.Mutex
 			return err
 		}
 	}
-	header.setBodyType(bodyType)
-	header.setCRC(crc32.ChecksumIEEE(frame))
-	header.setPayloadSize(uint32(len(frame)))
+	header := new(header)
+	header.SetBodyType(bodyType)
+	header.SetCRC(crc32.ChecksumIEEE(frame))
+	header.SetPayloadSize(uint32(len(frame)))
 
 	if lock != nil {
 		lock.Lock()
@@ -68,7 +67,7 @@ func writeFrame(wr io.Writer, frame []byte, minCompressLen int, lock *sync.Mutex
 	if _, err = wr.Write(header[:]); err != nil {
 		return err
 	}
-	_, err = io.Copy(wr, bytes.NewReader(frame))
+	_, err = wr.Write(frame)
 	return err
 }
 
@@ -80,7 +79,7 @@ func readFrame(r io.Reader) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("readFrameHeader: %v", err)
 	}
-	data := make([]byte, header.getPayloadSize())
+	data := make([]byte, header.GetPayloadSize())
 	if _, err := io.ReadFull(r, data); err != nil {
 		if err == io.EOF {
 			return nil, err
@@ -88,11 +87,12 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("readFrame: %v", err)
 	}
 
-	if crc32.ChecksumIEEE(data) != header.getCRC() {
+	if crc32.ChecksumIEEE(data) != header.GetCRC() {
 		return nil, errors.New("invalid crc")
 	}
 
-	if header.getBodyType() == bodyTypeCompressedLz4 {
+	switch header.GetBodyType() {
+	case bodyTypeCompressedLz4:
 		data, err := lz4.Decode(nil, data)
 		if err != nil {
 			return nil, fmt.Errorf("lz4: %v", err)
