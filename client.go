@@ -14,7 +14,7 @@ import (
 type Client interface {
 	ID() string
 	IsClosed() bool
-	Request(body []byte, deadline time.Time) (<-chan chanserv.Frame, chan error)
+	Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error)
 }
 
 func NewClient(
@@ -70,14 +70,16 @@ func (c *client) GracefulClose() {
 	}
 }
 
-func (c *client) Request(body []byte, deadline time.Time) (<-chan chanserv.Frame, chan error) {
+func (c *client) Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error) {
 	c.wg.Add(1)
 
 	errs := make(chan error, 2)
-	out := make(chan chanserv.Frame, 1024)
-	go c.request(body, deadline, out, errs)
-	return out, errs
-
+	srcChan := make(chan chanserv.Source, 1)
+	src := source(make(chan chanserv.Frame, 1024))
+	go c.request(body, deadline, src, errs)
+	srcChan <- src
+	close(srcChan)
+	return srcChan, errs
 }
 
 func (c *client) request(body []byte, deadline time.Time, out chan<- chanserv.Frame, errs chan error) {
@@ -119,4 +121,18 @@ type frame []byte
 
 func (f frame) Bytes() []byte {
 	return []byte(f)
+}
+
+type source chan chanserv.Frame
+
+func (s source) Header() []byte {
+	return nil
+}
+
+func (s source) Meta() chanserv.MetaData {
+	return nil
+}
+
+func (s source) Out() <-chan chanserv.Frame {
+	return s
 }
