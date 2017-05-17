@@ -39,7 +39,7 @@ func TestOk(t *testing.T) {
 	wg.Wait()
 }
 
-func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
+func sendReq(t *testing.T, r req, cli *Client, wg *sync.WaitGroup) {
 	defer wg.Done()
 	body, err := json.Marshal(&r)
 	require.NoError(t, err)
@@ -49,7 +49,7 @@ func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
 		fail := false
 		for err := range errs2 {
 			fail = true
-			t.Error("client error", err)
+			t.Error("Client error", err)
 		}
 		if fail {
 			t.Fail()
@@ -66,7 +66,7 @@ func sendReq(t *testing.T, r req, cli Client, wg *sync.WaitGroup) {
 	assert.Equal(t, r.Frames*r.Sources, counter, "number of frames is incorrect")
 }
 
-func setupServerAndCli(t *testing.T) Client {
+func setupServerAndCli(t *testing.T) *Client {
 	srcFunc := func(body []byte) <-chan chanserv.Source {
 		out := make(chan chanserv.Source)
 		go func() {

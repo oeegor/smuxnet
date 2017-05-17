@@ -11,17 +11,11 @@ import (
 	"github.com/zenhotels/chanserv"
 )
 
-type Client interface {
-	ID() string
-	IsClosed() bool
-	Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error)
-}
-
 func NewClient(
 	id, network, addr string,
 	keepAliveInterval, keepAliveTimeout time.Duration,
 	minCompressLen int,
-) (Client, error) {
+) (*Client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
@@ -40,7 +34,7 @@ func NewClient(
 	if err != nil {
 		return nil, err
 	}
-	return &client{
+	return &Client{
 		id:             id,
 		minCompressLen: minCompressLen,
 		session:        session,
@@ -48,29 +42,29 @@ func NewClient(
 	}, nil
 }
 
-type client struct {
+type Client struct {
 	id             string
 	minCompressLen int
 	session        *smux.Session
 	wg             *sync.WaitGroup
 }
 
-func (c *client) ID() string {
+func (c *Client) ID() string {
 	return c.id
 }
 
-func (c *client) IsClosed() bool {
+func (c *Client) IsClosed() bool {
 	return c.session.IsClosed()
 }
 
-func (c *client) GracefulClose() {
+func (c *Client) GracefulClose() {
 	c.wg.Wait()
 	if !c.session.IsClosed() {
 		c.session.Close()
 	}
 }
 
-func (c *client) Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error) {
+func (c *Client) Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error) {
 	c.wg.Add(1)
 
 	errs := make(chan error, 2)
@@ -82,7 +76,7 @@ func (c *client) Request(body []byte, deadline time.Time) (<-chan chanserv.Sourc
 	return srcChan, errs
 }
 
-func (c *client) request(body []byte, deadline time.Time, out chan<- chanserv.Frame, errs chan error) {
+func (c *Client) request(body []byte, deadline time.Time, out chan<- chanserv.Frame, errs chan error) {
 	defer c.wg.Done()
 	defer close(errs)
 	defer close(out)
@@ -111,7 +105,7 @@ func (c *client) request(body []byte, deadline time.Time, out chan<- chanserv.Fr
 			if err == io.EOF {
 				break
 			}
-			errs <- fmt.Errorf("client read frame error: %v", err)
+			errs <- fmt.Errorf("Client read frame error: %v", err)
 			break
 		}
 	}
