@@ -15,8 +15,8 @@ import (
 func NewServer(
 	readTimeout, writeTimeout time.Duration,
 	minCompressLen int,
-) (*server, error) {
-	return &server{
+) (*Server, error) {
+	return &Server{
 		minCompressLen: minCompressLen,
 		readTimeout:    readTimeout,
 		writeTimeout:   writeTimeout,
@@ -25,22 +25,22 @@ func NewServer(
 	}, nil
 }
 
-type server struct {
+type Server struct {
 	minCompressLen int
 	readTimeout    time.Duration
 	writeTimeout   time.Duration
-	// this channel is closed when server is asked to stop
+	// this channel is closed when Server is asked to stop
 	stop chan struct{}
 	// this wg used to determine when all processing is finished
 	wg *sync.WaitGroup
 }
 
-func (s *server) GracefulStop() {
+func (s *Server) GracefulStop() {
 	close(s.stop)
 	s.wg.Wait()
 }
 
-func (s *server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) chan error {
+func (s *Server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) chan error {
 	s.wg.Add(1)
 	defer s.wg.Done()
 
@@ -49,7 +49,7 @@ func (s *server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) chan err
 	return errs
 }
 
-func (s *server) listenAndServe(addr string, srcFn chanserv.SourceFunc, errs chan error) {
+func (s *Server) listenAndServe(addr string, srcFn chanserv.SourceFunc, errs chan error) {
 	defer close(errs)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
@@ -86,11 +86,11 @@ ACCEPT_LOOP:
 	}
 }
 
-func (s *server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error) {
+func (s *Server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error) {
 	defer s.wg.Done()
 	defer conn.Close()
 
-	// Setup server side of smux
+	// Setup Server side of smux
 	conf := smux.DefaultConfig()
 	conf.MaxFrameSize = 65000
 	session, err := smux.Server(conn, conf)
@@ -125,7 +125,7 @@ SESSION_LOOP:
 	sessionWg.Wait()
 }
 
-func (s *server) processStream(
+func (s *Server) processStream(
 	stream *smux.Stream, srcFn chanserv.SourceFunc,
 	sessionWg *sync.WaitGroup, errs chan error,
 ) {

@@ -92,7 +92,7 @@ func setupServerAndCli(t *testing.T) *Client {
 		fail := false
 		for err := range errs {
 			fail = true
-			t.Error("server error", err)
+			t.Error("Server error", err)
 		}
 		if fail {
 			t.Fail()
