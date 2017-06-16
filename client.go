@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/xtaci/smux"
-	"github.com/zenhotels/chanserv"
 )
 
 func NewClient(
@@ -64,19 +63,16 @@ func (c *Client) GracefulClose() {
 	}
 }
 
-func (c *Client) Request(body []byte, deadline time.Time) (<-chan chanserv.Source, chan error) {
+func (c *Client) Request(body []byte, deadline time.Time) (<-chan []byte, chan error) {
 	c.wg.Add(1)
 
 	errs := make(chan error, 2)
-	srcChan := make(chan chanserv.Source, 1)
-	src := source(make(chan chanserv.Frame, 1024))
+	src := make(chan []byte, 1024)
 	go c.request(body, deadline, src, errs)
-	srcChan <- src
-	close(srcChan)
-	return srcChan, errs
+	return src, errs
 }
 
-func (c *Client) request(body []byte, deadline time.Time, out chan<- chanserv.Frame, errs chan error) {
+func (c *Client) request(body []byte, deadline time.Time, out chan<- []byte, errs chan error) {
 	defer c.wg.Done()
 	defer close(errs)
 	defer close(out)
@@ -100,7 +96,7 @@ func (c *Client) request(body []byte, deadline time.Time, out chan<- chanserv.Fr
 
 	for {
 		if buf, err := readFrame(stream); err == nil {
-			out <- frame(buf)
+			out <- buf
 		} else {
 			if err == io.EOF {
 				break
@@ -109,24 +105,4 @@ func (c *Client) request(body []byte, deadline time.Time, out chan<- chanserv.Fr
 			break
 		}
 	}
-}
-
-type frame []byte
-
-func (f frame) Bytes() []byte {
-	return []byte(f)
-}
-
-type source chan chanserv.Frame
-
-func (s source) Header() []byte {
-	return nil
-}
-
-func (s source) Meta() chanserv.MetaData {
-	return nil
-}
-
-func (s source) Out() <-chan chanserv.Frame {
-	return s
 }

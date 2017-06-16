@@ -9,23 +9,33 @@ import (
 	"encoding/json"
 
 	"github.com/xtaci/smux"
-	"github.com/zenhotels/chanserv"
 )
+
+type Handler func([]byte) <-chan []byte
 
 func NewServer(
 	readTimeout, writeTimeout time.Duration,
-	minCompressLen int,
+	minCompressLen int, addr string,
 ) (*Server, error) {
-	return &Server{
+
+	listener, err := createListener(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	server := &Server{
+		listener:       listener,
 		minCompressLen: minCompressLen,
 		readTimeout:    readTimeout,
 		writeTimeout:   writeTimeout,
 		wg:             new(sync.WaitGroup),
 		stop:           make(chan struct{}),
-	}, nil
+	}
+	return server, nil
 }
 
 type Server struct {
+	listener       *net.TCPListener
 	minCompressLen int
 	readTimeout    time.Duration
 	writeTimeout   time.Duration
@@ -35,34 +45,36 @@ type Server struct {
 	wg *sync.WaitGroup
 }
 
+func createListener(addr string) (*net.TCPListener, error) {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("recolve tcp error: %v", err)
+
+	}
+	listener, err := net.ListenTCP(tcpAddr.Network(), tcpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("net.Listen error: %v", err)
+	}
+	return listener, nil
+}
+
 func (s *Server) GracefulStop() {
 	close(s.stop)
 	s.wg.Wait()
 }
 
-func (s *Server) ListenAndServe(addr string, srcFn chanserv.SourceFunc) chan error {
+func (s *Server) Serve(handler Handler) chan error {
 	s.wg.Add(1)
-	defer s.wg.Done()
 
 	errs := make(chan error, 1)
-	go s.listenAndServe(addr, srcFn, errs)
+	go s.serve(handler, errs)
 	return errs
 }
 
-func (s *Server) listenAndServe(addr string, srcFn chanserv.SourceFunc, errs chan error) {
+func (s *Server) serve(handler Handler, errs chan error) {
+	defer s.wg.Done()
 	defer close(errs)
-
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		errs <- fmt.Errorf("recolve tcp error: %v", err)
-		return
-	}
-	listener, err := net.ListenTCP(tcpAddr.Network(), tcpAddr)
-	if err != nil {
-		errs <- fmt.Errorf("net.Listen error: %v", err)
-		return
-	}
-	defer listener.Close()
+	defer s.listener.Close()
 
 ACCEPT_LOOP:
 	for {
@@ -72,8 +84,8 @@ ACCEPT_LOOP:
 		default:
 		}
 
-		listener.SetDeadline(time.Now().Add(1e9))
-		conn, err := listener.AcceptTCP()
+		s.listener.SetDeadline(time.Now().Add(1e9))
+		conn, err := s.listener.AcceptTCP()
 		if err != nil {
 			if opErr, ok := err.(*net.OpError); ok && opErr.Timeout() {
 				continue ACCEPT_LOOP
@@ -82,11 +94,11 @@ ACCEPT_LOOP:
 			return
 		}
 		s.wg.Add(1)
-		go s.serve(conn, srcFn, errs)
+		go s.serveSession(conn, handler, errs)
 	}
 }
 
-func (s *Server) serve(conn net.Conn, srcFn chanserv.SourceFunc, errs chan error) {
+func (s *Server) serveSession(conn net.Conn, handler Handler, errs chan error) {
 	defer s.wg.Done()
 	defer conn.Close()
 
@@ -120,13 +132,13 @@ SESSION_LOOP:
 			break SESSION_LOOP
 		}
 		sessionWg.Add(1)
-		go s.processStream(stream, srcFn, sessionWg, errs)
+		go s.processStream(stream, handler, sessionWg, errs)
 	}
 	sessionWg.Wait()
 }
 
 func (s *Server) processStream(
-	stream *smux.Stream, srcFn chanserv.SourceFunc,
+	stream *smux.Stream, handler Handler,
 	sessionWg *sync.WaitGroup, errs chan error,
 ) {
 	defer sessionWg.Done()
@@ -152,34 +164,24 @@ func (s *Server) processStream(
 		stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 	}
 
-	writeLock := new(sync.Mutex)
-	wg := new(sync.WaitGroup)
-	for src := range srcFn(buf) {
-		wg.Add(1)
-		go func(cs chanserv.Source) {
-			defer wg.Done()
-
-		FRAME_LOOP:
-			for frame := range cs.Out() {
-				if err != nil {
-					// if error is not empty shouldn't write anymore frames
-					// they may be written despite deadline has passed
-					// because of channels in stream.go
-					continue
-				}
-				select {
-				case <-s.stop:
-					continue FRAME_LOOP
-				default:
-				}
-				err = writeFrame(stream, frame.Bytes(), s.minCompressLen, writeLock)
-				if err != nil {
-					errs <- fmt.Errorf("error writing to stream: %v", err)
-				}
-			}
-		}(src)
+FRAME_LOOP:
+	for frame := range handler(buf) {
+		if err != nil {
+			// if error is not empty shouldn't write anymore frames
+			// they may be written despite deadline has passed
+			// because of channels in stream.go
+			continue
+		}
+		select {
+		case <-s.stop:
+			continue FRAME_LOOP
+		default:
+		}
+		err = writeFrame(stream, frame, s.minCompressLen, nil)
+		if err != nil {
+			errs <- fmt.Errorf("error writing to stream: %v", err)
+		}
 	}
-	wg.Wait()
 }
 
 type RequestMeta struct {
