@@ -56,6 +56,10 @@ func (c *Client) IsClosed() bool {
 	return c.session.IsClosed()
 }
 
+func (c *Client) NumStreams() int {
+	return c.session.NumStreams()
+}
+
 func (c *Client) GracefulClose() {
 	c.wg.Wait()
 	if !c.session.IsClosed() {
