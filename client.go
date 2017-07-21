@@ -86,6 +86,7 @@ func (c *Client) request(body []byte, deadline time.Time, out chan<- []byte, err
 		errs <- fmt.Errorf("open stream error: %v", err)
 		return
 	}
+	defer stream.Close()
 
 	err = stream.SetDeadline(deadline)
 	if err != nil {
