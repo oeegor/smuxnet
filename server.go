@@ -5,10 +5,9 @@ import (
 	"net"
 	"sync"
 	"time"
-
 	"encoding/json"
 
-	"github.com/xtaci/smux"
+	"github.com/ofw/smux"
 )
 
 type Handler func([]byte) <-chan []byte

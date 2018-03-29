@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xtaci/smux"
+	"github.com/ofw/smux"
 )
 
 func NewClient(

@@ -1,14 +1,11 @@
 package smuxnet
 
 import (
-	"strings"
-	"testing"
-
 	"encoding/json"
-
-	"time"
-
+	"strings"
 	"sync"
+	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

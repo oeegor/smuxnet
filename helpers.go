@@ -2,15 +2,11 @@ package smuxnet
 
 import (
 	"encoding/binary"
-	"io"
-
-	"fmt"
-
-	"hash/crc32"
-
-	"sync"
-
 	"errors"
+	"fmt"
+	"hash/crc32"
+	"io"
+	"sync"
 
 	"github.com/bkaradzic/go-lz4"
 )
