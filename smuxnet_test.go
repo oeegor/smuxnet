@@ -2,14 +2,17 @@ package smuxnet
 
 import (
 	"encoding/json"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"strings"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const maxFrameSize = 1024 * 1024 * 10
 
 type req struct {
 	RequestMeta
@@ -44,13 +47,13 @@ func sendReq(t *testing.T, r req, cli *Client, wg *sync.WaitGroup) {
 
 func TestOk(t *testing.T) {
 	r := req{
-		Frames: 4,
-		Frame:  strings.Repeat("a", 1024*1024*11),
+		Frames: 1,
+		Frame:  strings.Repeat("1", 1024*1024*11),
 	}
 	r.RequestMeta.Timeout = 1
 	cli := setupServerAndCli(t)
 	wg := new(sync.WaitGroup)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 1; i++ {
 		wg.Add(1)
 		go sendReq(t, r, cli, wg)
 	}
@@ -70,7 +73,7 @@ func setupServerAndCli(t *testing.T) *Client {
 		}()
 		return out
 	}
-	srv, err := NewServer(0, 0, 100, 1024*1024*10, ":9002")
+	srv, err := NewServer(0, 0, maxFrameSize*2, maxFrameSize, ":9002")
 	require.NoError(t, err)
 	errs := srv.Serve(handler)
 	go func() {
@@ -84,7 +87,7 @@ func setupServerAndCli(t *testing.T) *Client {
 		}
 	}()
 	time.Sleep(time.Millisecond)
-	cli, err := NewClient("test", "tcp4", ":9002", 0, 0, 100, 1024*1024*10)
+	cli, err := NewClient("test", "tcp4", ":9002", 0, 0, maxFrameSize*2, maxFrameSize)
 	require.NoError(t, err)
 	return cli
 }
