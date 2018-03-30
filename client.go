@@ -13,7 +13,7 @@ import (
 func NewClient(
 	id, network, addr string,
 	keepAliveInterval, keepAliveTimeout time.Duration,
-	minCompressLen int,
+	minCompressLen int, maxFrameSize int,
 ) (*Client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
@@ -27,7 +27,7 @@ func NewClient(
 	if keepAliveInterval > 0 {
 		conf.KeepAliveInterval = keepAliveInterval
 	}
-	conf.MaxFrameSize = 65000
+	conf.MaxFrameSize = maxFrameSize
 	conf.MaxReceiveBuffer = 1024 * 1024 * 1024
 	session, err := smux.Client(conn, conf)
 	if err != nil {
@@ -43,6 +43,7 @@ func NewClient(
 
 type Client struct {
 	id             string
+	maxFrameSize   int
 	minCompressLen int
 	session        *smux.Session
 	wg             *sync.WaitGroup

@@ -45,7 +45,7 @@ func sendReq(t *testing.T, r req, cli *Client, wg *sync.WaitGroup) {
 func TestOk(t *testing.T) {
 	r := req{
 		Frames: 4,
-		Frame:  strings.Repeat("a", 1000*1000),
+		Frame:  strings.Repeat("a", 1024*1024*11),
 	}
 	r.RequestMeta.Timeout = 1
 	cli := setupServerAndCli(t)
@@ -70,7 +70,7 @@ func setupServerAndCli(t *testing.T) *Client {
 		}()
 		return out
 	}
-	srv, err := NewServer(0, 0, 100, ":9002")
+	srv, err := NewServer(0, 0, 100, 1024*1024*10, ":9002")
 	require.NoError(t, err)
 	errs := srv.Serve(handler)
 	go func() {
@@ -84,7 +84,7 @@ func setupServerAndCli(t *testing.T) *Client {
 		}
 	}()
 	time.Sleep(time.Millisecond)
-	cli, err := NewClient("test", "tcp4", ":9002", 0, 0, 100)
+	cli, err := NewClient("test", "tcp4", ":9002", 0, 0, 100, 1024*1024*10)
 	require.NoError(t, err)
 	return cli
 }

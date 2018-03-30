@@ -1,11 +1,11 @@
 package smuxnet
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 	"time"
-	"encoding/json"
 
 	"github.com/ofw/smux"
 )
@@ -14,7 +14,7 @@ type Handler func([]byte) <-chan []byte
 
 func NewServer(
 	readTimeout, writeTimeout time.Duration,
-	minCompressLen int, addr string,
+	minCompressLen int, maxFrameSize int, addr string,
 ) (*Server, error) {
 
 	listener, err := createListener(addr)
@@ -24,6 +24,7 @@ func NewServer(
 
 	server := &Server{
 		listener:       listener,
+		maxFrameSize:   maxFrameSize,
 		minCompressLen: minCompressLen,
 		readTimeout:    readTimeout,
 		writeTimeout:   writeTimeout,
@@ -35,6 +36,7 @@ func NewServer(
 
 type Server struct {
 	listener       *net.TCPListener
+	maxFrameSize   int
 	minCompressLen int
 	readTimeout    time.Duration
 	writeTimeout   time.Duration
@@ -103,7 +105,7 @@ func (s *Server) serveSession(conn net.Conn, handler Handler, errs chan error) {
 
 	// Setup Server side of smux
 	conf := smux.DefaultConfig()
-	conf.MaxFrameSize = 1024*1024*10
+	conf.MaxFrameSize = s.maxFrameSize
 	session, err := smux.Server(conn, conf)
 	if err != nil {
 		errs <- fmt.Errorf("error creating session: %v", err)
