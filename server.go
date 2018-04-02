@@ -58,6 +58,9 @@ func createListener(addr string) (*net.TCPListener, error) {
 	}
 	return listener, nil
 }
+func (s *Server) Stop() {
+	s.listener.Close()
+}
 
 func (s *Server) GracefulStop() {
 	close(s.stop)
