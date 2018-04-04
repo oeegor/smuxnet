@@ -10,32 +10,40 @@ import (
 	"github.com/ofw/smux"
 )
 
+type ClientConfig struct {
+	KeepAliveInterval time.Duration
+	KeepAliveTimeout time.Duration
+	MinCompressLen int
+	MaxFrameSize int
+}
+
 func NewClient(
 	id, network, addr string,
-	keepAliveInterval, keepAliveTimeout time.Duration,
-	minCompressLen int, maxFrameSize int,
+	conf ClientConfig,
 ) (*Client, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	conf := smux.DefaultConfig()
-	if keepAliveTimeout > 0 {
-		conf.KeepAliveTimeout = keepAliveTimeout
+	smuxConf := smux.DefaultConfig()
+	if conf.KeepAliveTimeout > 0 {
+		fmt.Println("set timeout",conf.KeepAliveTimeout)
+		smuxConf.KeepAliveTimeout = conf.KeepAliveTimeout
 	}
-	if keepAliveInterval > 0 {
-		conf.KeepAliveInterval = keepAliveInterval
+	if conf.KeepAliveInterval > 0 {
+		smuxConf.KeepAliveInterval = conf.KeepAliveInterval
 	}
-	conf.MaxFrameSize = maxFrameSize
-	conf.MaxReceiveBuffer = 1024 * 1024 * 1024
-	session, err := smux.Client(conn, conf)
+	if conf.MaxFrameSize > 0 {
+		smuxConf.MaxFrameSize = conf.MaxFrameSize
+	}
+	session, err := smux.Client(conn, smuxConf)
 	if err != nil {
 		return nil, err
 	}
 	return &Client{
 		id:             id,
-		minCompressLen: minCompressLen,
+		minCompressLen: conf.MinCompressLen,
 		session:        session,
 		wg:             new(sync.WaitGroup),
 	}, nil

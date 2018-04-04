@@ -120,7 +120,11 @@ func BenchmarkSMUX(b *testing.B) {
 }
 
 func setupCli(t require.TestingT) *Client {
-	cli, err := NewClient("test", "tcp4", ":9002", 0, 0, maxFrameSize*2, maxFrameSize)
+	conf := ClientConfig{
+		MaxFrameSize: maxFrameSize,
+		MinCompressLen: maxFrameSize*2,
+	}
+	cli, err := NewClient("test", "tcp4", ":9002", conf)
 	require.NoError(t, err)
 	return cli
 }
